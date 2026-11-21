@@ -1,43 +1,61 @@
 # MimamoriPlatform
 
-> **対応を、最後までつなぐ。**  
-> The minimal, reusable Case Core Engine for Mimamori.
+> **対応を、最後までつなぐ。**
+> A small Case Core Engine with optional external inputs.
 
-MimamoriPlatform is the canonical destination for the **Mimamori Core Engine**. The first implementation is extracted from the **public** [mimamori-care-ops](https://github.com/Takzin1/mimamori-care-ops) repository with the original Case semantics preserved.
+**MimamoriPlatform is the proposed canonical Core Engine** for Mimamori's care-focused MVP. This initial implementation extracts the proven, pure domain modules from the **public** [mimamori-care-ops](https://github.com/Takzin1/mimamori-care-ops) repository without changing Case state semantics.
 
-## Scope
+## What the engine does
 
-**Core does:** case intake state, acknowledgement, assignment, action, explicit handoff acceptance, evidence-backed completion, close/reopen, event replay, SLA/queue projection and a storage contract. Case handoff keeps the outgoing owner accountable until the incoming owner accepts.
+受付 → 確認 → 担当決定 → 対応 → (必要時のみ) 引き継ぎ → 証跡付き完了 → 終了確認
 
-**Core does not:** care charts, billing, manuals, LMS, social messaging, voice/LLM runtime, a no-code workflow builder or a general plugin marketplace. These are not necessary for a Case to reach verifiable completion.
+- Case creation and immutable source identity
+- Explicit assignee responsibility, two-phase handoff and acceptance
+- Evidence-backed completion and independent close/reopen
+- Event replay, optimistic version checks and deterministic SLA/queue projections
+- Repository interface and **synthetic-test-only** in-memory storage
 
-## Safety / maturity
+## Run tests
 
-- **Engine only:** not a deployed, authenticated care operations service. Production identity, RBAC, tenant membership checks, durable persistence, outbox, operating procedures and privacy controls remain in [mimamori-care-ops](https://github.com/Takzin1/mimamori-care-ops) until separately integrated and tested.
-- The in-memory repository is **only for tests and synthetic scenarios**, never care data.
-- `actorId` passed to the pure engine is **not authenticated**; a trusted server must bind it to verified identity, tenant membership and command authorization.
-- A Case can only be marked completed with a valid outcome, explanation and evidence references. No automated clinical/emergency decisions are provided.
-- This is a new public repository: do not commit real personal data, secrets, private project files or real care records.
+Node.js 24+ is required. This is TypeScript code, not a web server or a mobile app.
 
-## Code status
+```sh
+npm ci --ignore-scripts
+npm run typecheck
+npm test
+```
 
-The first extraction PR will add standalone TypeScript code and existing behavioral regression tests. Until that PR is merged, this `main` branch is a project declaration, **not a functioning engine**.
+Import directly from `src/index.ts` in a compatible TypeScript/Node environment. Integration with another repository will require a tested packaging/versioning decision; publishing a package is **not** part of this MVP.
 
 ## Architecture
 
 ```text
-Mimamori app / voice / LINE / external signals   [future adapters]
+    Mimamori App / Voice / LINE / web intake      [optional adapters; future]
                     |
-            authenticated API / RBAC              [integration task]
+      verified identity / tenant membership      [existing CareOps boundary]
                     |
-          MimamoriPlatform Core Engine
-    CASE + ownership + acceptance + evidence
-          |                       |
-     Queue / SLA             Event replay
-          |
-      repository port
-          |
-  durable DB / outbox / operations               [integration task]
+            MIMAMORI PLATFORM CORE
+           Case / owner / handoff / evidence
+                 /             \
+          queue + SLA        event replay
+                    |
+             repository port
+                    |
+       durable persistence / outbox               [existing CareOps boundary]
 ```
 
-**Development rule:** Do not add a feature unless it protects the continuity or verifiability of the response. Maintain the Framework connection seam, but do not build a generic platform before validating the care-facility MVP.
+## Deliberate non-features
+
+No care-charting or billing suite, LMS, manual editor, chat platform, no-code workflow builder, voice transcription, clinical AI decisions, or plugin marketplace. Framework interoperability is an interface concern, not permission to make the engine grow indiscriminately.
+
+## Security and maturity
+
+**This repository alone is NOT a production care service.** It contains no login, authentication, authorization, durable storage or notification worker. The pure functions accept `actorId`/`tenantId` provided by their caller: they are **not** identity verification. Real deployment must preserve CareOps' authenticated API, membership/RBAC checks, safe tenant isolation, transactional store, audit/outbox and recovery.
+
+Never store real resident data in the in-memory test repository, and never perform autonomous clinical judgement or automatic handoff acceptance/closure.
+
+**See [Core contract](docs/CORE_CONTRACT.md)** for invariants and the integration gate.
+
+## Provenance
+
+Copied from the public `Takzin1/mimamori-care-ops` `main` branch on 2026-11-21. Existing Case/SLA/persistence regression tests are carried over with their implementations. The previous service remains operational source of truth until a verified consumer integration is complete. This repository does not change that deployment.
