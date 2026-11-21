@@ -31,24 +31,3 @@ export class SignalReplayMismatchError extends Error {
     this.name = "SignalReplayMismatchError";
   }
 }
-
-
-export class CaseStoreCorruptionError extends Error {
-  readonly code = "CASE_STORE_CORRUPTION";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "CaseStoreCorruptionError";
-  }
-}
-
-export class CaseStoreTransportError extends Error {
-  readonly code = "CASE_STORE_TRANSPORT_ERROR";
-  readonly status: number | null;
-
-  constructor(message: string, status: number | null = null) {
-    super(message);
-    this.name = "CaseStoreTransportError";
-    this.status = status;
-  }
-}

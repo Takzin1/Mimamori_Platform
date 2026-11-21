@@ -13,7 +13,7 @@
 - Explicit assignee responsibility, two-phase handoff and acceptance
 - Evidence-backed completion and independent close/reopen
 - Event replay, optimistic version checks and deterministic SLA/queue projections
-- Repository interface and **synthetic-test-only** in-memory storage
+- A small repository interface; the in-memory fake is **tests/support only**, never part of production exports
 
 ## Run tests
 
@@ -26,6 +26,10 @@ npm test
 ```
 
 Import directly from `src/index.ts` in a compatible TypeScript/Node environment. Integration with another repository will require a tested packaging/versioning decision; publishing a package is **not** part of this MVP.
+
+## Minimal public contract
+
+`src/index.ts` exports only the pure Case engine, event/metric functions, deterministic SLA and queue projection, and the persistence **interface**. Fake stores and facility-specific policy directories belong to tests or the consuming CareOps service. There is no second runtime engine or duplicate application state.
 
 ## Architecture
 

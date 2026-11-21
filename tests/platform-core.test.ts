@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createCase, executeCommand, InMemoryCaseRepository, projectCaseQueue,
+  createCase, executeCommand, projectCaseQueue,
   InvalidTransitionError, type CaseCommand, type CaseSlaPolicy,
 } from "../src/index.ts";
+import { InMemoryCaseRepository } from "./support/in-memory-case-repository.ts";
 
 const duration = {
   acknowledgeWithinMs: 60000, assignWithinMs: 60000,

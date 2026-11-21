@@ -1,13 +1,13 @@
 import {
   applyEvent,
   replayCase,
-} from "../core/case-core.ts";
-import { CaseConflictError } from "../core/errors.ts";
+} from "../../src/core/case-core.ts";
+import { CaseConflictError } from "../../src/core/errors.ts";
 import type {
   CaseAggregate,
   CaseCreatedEvent,
   CaseEvent,
-} from "../core/types.ts";
+} from "../../src/core/types.ts";
 import {
   CaseNotFoundError,
   DuplicateCaseError,
@@ -18,7 +18,7 @@ import type {
   CaseRepository,
   CreateCaseResult,
   StoredCase,
-} from "./types.ts";
+} from "../../src/persistence/types.ts";
 
 interface InternalRecord {
   aggregate: CaseAggregate;

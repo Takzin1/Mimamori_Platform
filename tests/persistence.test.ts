@@ -3,12 +3,12 @@ import test from "node:test";
 
 import {
   CaseConflictError,
-  InMemoryCaseRepository,
-  SignalReplayMismatchError,
   createCase,
   executeCommand,
   replayCase,
 } from "../src/index.ts";
+import { InMemoryCaseRepository } from "./support/in-memory-case-repository.ts";
+import { SignalReplayMismatchError } from "./support/errors.ts";
 
 function at(minute: number): string {
   return new Date(Date.UTC(2026, 8, 25, 1, minute, 0)).toISOString();

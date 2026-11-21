@@ -34,3 +34,11 @@ Those services are real and valuable, but they are **application infrastructure*
 6. No real care data, credential copying, automatic migrations or production toggles during this extraction.
 
 **MVP freeze:** If a proposed feature does not protect owner continuity, reliable progress or evidence-backed completion, it does not belong in this engine.
+
+## Scope reduction (2026-11-21)
+
+- Removed the facility SLA-policy directory from the portable engine: config lookup stays with the consuming application.
+- Moved in-memory Case repository and its synthetic errors from `src/` to `tests/support/`: the fake never ships as part of the public Core surface.
+- Excluded PostgREST transport/corruption errors from the Core package; these are service-adapter concerns.
+- Added a boundary regression test: new UI, identity, network, deployment or other infrastructure modules must not enter this package.
+- Introduced small PR CI to replace repetitive manual test execution, without modifying existing CareOps Actions.
