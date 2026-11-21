@@ -1,4 +1,9 @@
 import {
+  CASE_COMMAND_TYPES,
+  CASE_PRIORITIES,
+  COMPLETION_OUTCOMES,
+  EVIDENCE_KINDS,
+  SIGNAL_TYPES,
   type CaseAggregate,
   type CaseCommand,
   type CaseCommandType,
@@ -11,12 +16,50 @@ import {
   InvalidTransitionError,
 } from "./errors.ts";
 
-function requireText(value: string, label: string): string {
+function requireText(value: unknown, label: string, maxLength = 4000): string {
+  if (typeof value !== "string" || value.length > maxLength) {
+    throw new InvalidTransitionError(`Invalid ${label}`);
+  }
   const normalized = value.trim();
-  if (!normalized) {
-    throw new InvalidTransitionError(`${label} is required`);
+  if (!normalized || /[\u0000\u007f]/.test(normalized)) {
+    throw new InvalidTransitionError(`Invalid ${label}`);
   }
   return normalized;
+}
+
+function requireEnum(value: unknown, allowed: readonly string[], label: string): void {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new InvalidTransitionError(`Invalid ${label}`);
+  }
+}
+
+function requireEventTime(value: unknown): number {
+  if (typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new InvalidTransitionError("Invalid event timestamp");
+  }
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) {
+    throw new InvalidTransitionError("Invalid event timestamp");
+  }
+  return time;
+}
+
+function requireEvidence(value: unknown): { kind: "note" | "call" | "visit" | "message" | "external_ref"; ref: string }[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
+    throw new InvalidTransitionError("Completion requires 1 to 100 evidence items");
+  }
+  return value.map((item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new InvalidTransitionError("Invalid evidence item");
+    }
+    const record = item as { kind?: unknown; ref?: unknown };
+    requireEnum(record.kind, EVIDENCE_KINDS, "evidence kind");
+    return {
+      kind: record.kind as "note" | "call" | "visit" | "message" | "external_ref",
+      ref: requireText(record.ref, "evidence ref", 1000),
+    };
+  });
 }
 
 function requireStatus(
@@ -46,7 +89,8 @@ export function assertCaseCommandAvailable(
   actorId: string,
   type: CaseCommandType,
 ): void {
-  const actor = requireText(actorId, "actor id");
+  const actor = requireText(actorId, "actor id", 128);
+  requireEnum(type, CASE_COMMAND_TYPES, "Case command");
 
   switch (type) {
     case "set_priority":
@@ -138,11 +182,14 @@ export function createCase(input: NewCaseInput): {
   aggregate: CaseAggregate;
   event: CaseCreatedEvent;
 } {
-  const caseId = requireText(input.id, "case id");
-  const tenantId = requireText(input.tenantId, "tenant id");
-  const subjectId = requireText(input.subjectId, "subject id");
-  const sourceAdapter = requireText(input.sourceAdapter, "source adapter");
-  const sourceSignalId = requireText(input.sourceSignalId, "source signal id");
+  const caseId = requireText(input.id, "case id", 128);
+  const tenantId = requireText(input.tenantId, "tenant id", 128);
+  const subjectId = requireText(input.subjectId, "subject id", 128);
+  const sourceAdapter = requireText(input.sourceAdapter, "source adapter", 128);
+  const sourceSignalId = requireText(input.sourceSignalId, "source signal id", 128);
+  requireEnum(input.sourceType, SIGNAL_TYPES, "source type");
+  requireEnum(input.priority, CASE_PRIORITIES, "priority");
+  requireEventTime(input.createdAt);
 
   const event: CaseCreatedEvent = {
     type: "case_created",
@@ -173,7 +220,7 @@ export function executeCommand(
     throw new CaseConflictError(expectedVersion, aggregate.version);
   }
 
-  const actorId = requireText(command.actorId, "actor id");
+  const actorId = requireText(command.actorId, "actor id", 128);
   assertCaseCommandAvailable(
     aggregate,
     actorId,
@@ -184,6 +231,7 @@ export function executeCommand(
 
   switch (command.type) {
     case "set_priority":
+      requireEnum(command.priority, CASE_PRIORITIES, "priority");
       if (command.priority === aggregate.priority) {
         throw new InvalidTransitionError(
           "Priority change must select a different priority",
@@ -217,7 +265,7 @@ export function executeCommand(
         sequence,
         at,
         actorId,
-        data: { assigneeId: requireText(command.assigneeId, "assignee id") },
+        data: { assigneeId: requireText(command.assigneeId, "assignee id", 128) },
       };
       break;
 
@@ -232,7 +280,7 @@ export function executeCommand(
       break;
 
     case "request_handoff":
-      if (requireText(command.targetAssigneeId, "handoff target") === actorId) {
+      if (requireText(command.targetAssigneeId, "handoff target", 128) === actorId) {
         throw new InvalidTransitionError(
           "Handoff target must differ from current assignee",
         );
@@ -260,11 +308,7 @@ export function executeCommand(
       break;
 
     case "complete":
-      if (command.evidence.length === 0) {
-        throw new InvalidTransitionError(
-          "Completion requires at least one evidence item",
-        );
-      }
+      requireEnum(command.outcome, COMPLETION_OUTCOMES, "completion outcome");
       event = {
         type: "completed",
         sequence,
@@ -272,11 +316,8 @@ export function executeCommand(
         actorId,
         data: {
           outcome: command.outcome,
-          summary: requireText(command.summary, "completion summary"),
-          evidence: command.evidence.map((item) => ({
-            kind: item.kind,
-            ref: requireText(item.ref, "evidence ref"),
-          })),
+          summary: requireText(command.summary, "completion summary", 4000),
+          evidence: requireEvidence(command.evidence),
         },
       };
       break;
@@ -297,9 +338,12 @@ export function executeCommand(
         sequence,
         at,
         actorId,
-        data: { reason: requireText(command.reason, "reopen reason") },
+        data: { reason: requireText(command.reason, "reopen reason", 1000) },
       };
       break;
+
+    default:
+      throw new InvalidTransitionError("Unsupported Case command type");
   }
 
   return { aggregate: applyEvent(aggregate, event), event };
@@ -309,6 +353,13 @@ export function applyEvent(
   aggregate: CaseAggregate | null,
   event: CaseEvent,
 ): CaseAggregate {
+  // Replayed records are treated as untrusted even if TypeScript types match.
+  if (!event || typeof event !== "object" ||
+    !Number.isSafeInteger(event.sequence) || event.sequence < 1 ||
+    !event.data || typeof event.data !== "object" || Array.isArray(event.data)) {
+    throw new InvalidTransitionError("Malformed Case event");
+  }
+  const eventTime = requireEventTime(event.at);
   if (event.type === "case_created") {
     if (aggregate) {
       throw new InvalidTransitionError(
@@ -320,6 +371,16 @@ export function applyEvent(
         "case_created must have sequence 1",
       );
     }
+    if (event.actorId !== null) {
+      throw new InvalidTransitionError("Case creation must be a source event");
+    }
+    requireText(event.data.caseId, "case id", 128);
+    requireText(event.data.tenantId, "tenant id", 128);
+    requireText(event.data.subjectId, "subject id", 128);
+    requireText(event.data.sourceAdapter, "source adapter", 128);
+    requireText(event.data.sourceSignalId, "source signal id", 128);
+    requireEnum(event.data.sourceType, SIGNAL_TYPES, "source type");
+    requireEnum(event.data.priority, CASE_PRIORITIES, "priority");
 
     return {
       id: event.data.caseId,
@@ -354,6 +415,10 @@ export function applyEvent(
       `Event sequence gap: expected ${aggregate.version + 1}, received ${event.sequence}`,
     );
   }
+  requireText(event.actorId, "event actor id", 128);
+  if (eventTime < requireEventTime(aggregate.createdAt)) {
+    throw new InvalidTransitionError("Event predates Case creation");
+  }
 
   const next: CaseAggregate = {
     ...aggregate,
@@ -362,6 +427,8 @@ export function applyEvent(
 
   switch (event.type) {
     case "priority_changed":
+      requireEnum(event.data.priority, CASE_PRIORITIES, "priority");
+      requireEnum(event.data.previousPriority, CASE_PRIORITIES, "previous priority");
       requireStatus(
         aggregate,
         "NEW",
@@ -395,6 +462,7 @@ export function applyEvent(
 
     case "assigned":
       requireStatus(aggregate, "ACKNOWLEDGED");
+      requireText(event.data.assigneeId, "assigned actor id", 128);
       return {
         ...next,
         status: "ASSIGNED",
@@ -414,6 +482,10 @@ export function applyEvent(
     case "handoff_requested":
       requireStatus(aggregate, "IN_PROGRESS");
       requireCurrentAssignee(aggregate, event.actorId);
+      requireText(event.data.targetAssigneeId, "handoff target", 128);
+      if (event.data.targetAssigneeId === aggregate.assigneeId) {
+        throw new InvalidTransitionError("Handoff cannot target current owner");
+      }
       return {
         ...next,
         status: "HANDOFF_PENDING",
@@ -427,6 +499,9 @@ export function applyEvent(
           "Handoff acceptance actor does not match target",
         );
       }
+      if (event.data.previousAssigneeId !== aggregate.assigneeId) {
+        throw new InvalidTransitionError("Handoff previous owner mismatch");
+      }
       return {
         ...next,
         status: "IN_PROGRESS",
@@ -437,11 +512,9 @@ export function applyEvent(
     case "completed":
       requireStatus(aggregate, "IN_PROGRESS");
       requireCurrentAssignee(aggregate, event.actorId);
-      if (event.data.evidence.length === 0) {
-        throw new InvalidTransitionError(
-          "Completion event requires evidence",
-        );
-      }
+      requireEnum(event.data.outcome, COMPLETION_OUTCOMES, "completion outcome");
+      requireText(event.data.summary, "completion summary", 4000);
+      const evidence = requireEvidence(event.data.evidence);
       return {
         ...next,
         status: "COMPLETED",
@@ -449,7 +522,7 @@ export function applyEvent(
         completion: {
           outcome: event.data.outcome,
           summary: event.data.summary,
-          evidence: event.data.evidence,
+          evidence,
           completedBy: event.actorId,
           completedAt: event.at,
         },
@@ -465,6 +538,7 @@ export function applyEvent(
 
     case "reopened":
       requireStatus(aggregate, "COMPLETED", "CLOSED");
+      requireText(event.data.reason, "reopen reason", 1000);
       return {
         ...next,
         status: "IN_PROGRESS",
@@ -475,6 +549,9 @@ export function applyEvent(
         reopenedCount: aggregate.reopenedCount + 1,
         completion: null,
       };
+
+    default:
+      throw new InvalidTransitionError("Unsupported Case event type");
   }
 }
 
